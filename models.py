@@ -11,7 +11,7 @@ from google.appengine.ext import ndb
 class User(ndb.Model):
     """User profile"""
     name = ndb.StringProperty(required=True)
-    email =ndb.StringProperty()
+    email = ndb.StringProperty()
 
 
 class Game(ndb.Model):
@@ -26,7 +26,7 @@ class Game(ndb.Model):
     def new_game(cls, user, attempts):
         """Creates and returns a new game"""
         game = Game(user=user,
-                    target=random.choice(range(1, 31+1)),
+                    target=random.choice(range(1, 31 + 1)),
                     attempts_allowed=attempts,
                     attempts_remaining=attempts,
                     game_over=False)
@@ -75,6 +75,11 @@ class GameForm(messages.Message):
     user_name = messages.StringField(5, required=True)
 
 
+class GameForms(messages.Message):
+    """Return multiple ScoreForms"""
+    items = messages.MessageField(GameForm, 1, repeated=True)
+
+
 class NewGameForm(messages.Message):
     """Used to create a new game"""
     user_name = messages.StringField(1, required=True)
@@ -83,7 +88,7 @@ class NewGameForm(messages.Message):
 
 class MakeMoveForm(messages.Message):
     """Used to make a move in an existing game"""
-    pick_a_date= messages.IntegerField(1, required=True)
+    pick_a_date = messages.IntegerField(1, required=True)
 
 
 class ScoreForm(messages.Message):
