@@ -19,6 +19,7 @@ class Game(ndb.Model):
     target = ndb.IntegerProperty(required=True)
     attempts_allowed = ndb.IntegerProperty(required=True)
     attempts_remaining = ndb.IntegerProperty(required=True, default=5)
+    game_canceled = ndb.BooleanProperty(required=True, default=False)
     game_over = ndb.BooleanProperty(required=True, default=False)
     user = ndb.KeyProperty(required=True, kind='User')
 
@@ -52,6 +53,10 @@ class Game(ndb.Model):
         score = Score(user=self.user, date=date.today(), won=won,
                       guesses=self.attempts_allowed - self.attempts_remaining)
         score.put()
+
+    def canceled_game(self):
+        self.game_canceled = True
+        self.put()
 
 
 class Score(ndb.Model):
