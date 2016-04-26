@@ -12,7 +12,7 @@ from google.appengine.api import taskqueue
 
 from models import User, Game, Score
 from models import StringMessage, NewGameForm, GameForm, GameForms, MakeMoveForm, \
-    ScoreForms
+    ScoreForms, LimitResults
 from utils import get_by_urlsafe
 
 NEW_GAME_REQUEST = endpoints.ResourceContainer(NewGameForm)
@@ -21,8 +21,9 @@ GET_GAME_REQUEST = endpoints.ResourceContainer(
 MAKE_MOVE_REQUEST = endpoints.ResourceContainer(
     MakeMoveForm,
     urlsafe_game_key=messages.StringField(1), )
+
 USER_REQUEST = endpoints.ResourceContainer(user_name=messages.StringField(1, required=True),
-                                           email=messages.StringField(2), )
+                                           email=messages.StringField(2), total_points=messages.IntegerField(3),)
 
 MEMCACHE_MOVES_REMAINING = 'MOVES_REMAINING'
 
@@ -41,7 +42,7 @@ class GetYourBonusDayApi(remote.Service):
         if User.query(User.name == request.user_name).get():
             raise endpoints.ConflictException(
                 'A User with that name already exists!')
-        user = User(name=request.user_name, email=request.email)
+        user = User(name=request.user_name, email=request.email, total_points=request.total_points)
         user.put()
         return StringMessage(message='User {} created!'.format(
             request.user_name))
@@ -101,32 +102,45 @@ class GetYourBonusDayApi(remote.Service):
                       http_method='PUT')
     def make_move(self, request):
         """Makes a move. Returns a game state with message"""
+
         game = get_by_urlsafe(request.urlsafe_game_key, Game)
+
+        user = User.query(User.name == request.user_name).get()
+        if not user:
+            raise endpoints.NotFoundException(
+                'A User with that name does not exist!')
+
+        if game and user.key == game.user:
+
+            if game.game_over:
+                return game.to_form('Game already over!')
+
+            if request.pick_a_date > 31:
+                raise endpoints.BadRequestException('Invalid date!')
+
+            else:
+                game.attempts_remaining -= 1
+                if request.pick_a_date == game.target:
+                    game.added_points = 1
+                    game.won = True
+                    game.end_game(game.won, game.added_points)
+                    return game.to_form('You win!')
+          
+                if request.pick_a_date < game.target:
+                    msg = 'Maybe too early for a bonus!'
+                else:
+                    msg = 'A little too late, a bonus comes sooner than that!'
+
+                if game.attempts_remaining < 1:
+                    game.won = False
+                    game.added_points = 0
+                    game.end_game(game.won, game.added_points)
+                    return game.to_form(msg + ' Game over!')
         
-        if game:
-          if game.game_over:
-              return game.to_form('Game already over!')
-            
-          elif request.pick_a_date > 31:
-              raise endpoints.BadRequestException('Invalid date!')
+                game.put()
+                return game.to_form(msg)
 
-          game.attempts_remaining -= 1
-          if request.pick_a_date == game.target:
-              game.end_game(True)
-              return game.to_form('You win!')
-
-          if request.pick_a_date < game.target:
-              msg = 'Maybe too early for a bonus!'
-          else:
-              msg = 'A little too late, a bonus comes sooner than that!'
-
-          if game.attempts_remaining < 1:
-              game.end_game(False)
-              return game.to_form(msg + ' Game over!')
-          else:
-              game.put()
-              return game.to_form(msg)
-        raise endpoints.NotFoundException('That game does not exist!')
+        raise endpoints.BadRequestException('User_name not found! Please create your own game to play')
 
     @endpoints.method(request_message=GET_GAME_REQUEST, response_message=StringMessage,
                       path='game/{urlsafe_game_key}/cancel',
@@ -146,14 +160,15 @@ class GetYourBonusDayApi(remote.Service):
                 'Cannot cancel a completed game!')
         else:
             raise endpoints.NotFoundException('That game does not exist!')
-        
+
     @endpoints.method(response_message=ScoreForms,
                       path='scores',
                       name='get_scores',
                       http_method='GET')
     def get_scores(self, request):
         """Return all scores"""
-        return ScoreForms(items=[score.to_form() for score in Score.query()])
+        scores = Score.query().order(Score.user)
+        return ScoreForms(items=[score.to_form() for score in scores])
 
     @endpoints.method(request_message=USER_REQUEST,
                       response_message=ScoreForms,
@@ -167,6 +182,21 @@ class GetYourBonusDayApi(remote.Service):
             raise endpoints.NotFoundException(
                 'A User with that name does not exist!')
         scores = Score.query(Score.user == user.key)
+        return ScoreForms(items=[score.to_form() for score in scores])
+
+    @endpoints.method(request_message=LimitResults,
+                      response_message=ScoreForms,
+                      path='scores/high_scores',
+                      name='get_high_scores',
+                      http_method='GET')
+    def get_high_scores(self, request):
+        """Return all scores ordered by total points"""
+        if request.limit:
+            scores = Score.query().order(-Score.total_points).fetch(request.limit)
+
+        else:
+            scores = Score.query().order(-Score.total_points)
+
         return ScoreForms(items=[score.to_form() for score in scores])
 
     @endpoints.method(response_message=StringMessage,

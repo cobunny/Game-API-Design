@@ -12,6 +12,7 @@ class User(ndb.Model):
     """User profile"""
     name = ndb.StringProperty(required=True)
     email = ndb.StringProperty()
+    total_points = ndb.IntegerProperty(default=0, required=True)
 
 
 class Game(ndb.Model):
@@ -21,16 +22,22 @@ class Game(ndb.Model):
     attempts_remaining = ndb.IntegerProperty(required=True, default=5)
     game_canceled = ndb.BooleanProperty(required=True, default=False)
     game_over = ndb.BooleanProperty(required=True, default=False)
+    total_points = ndb.IntegerProperty(required=True, default=0)
+    added_points = ndb.IntegerProperty(required=True, default=0)
+    won = ndb.BooleanProperty(required=True, default=False)
     user = ndb.KeyProperty(required=True, kind='User')
 
     @classmethod
     def new_game(cls, user, attempts):
         """Creates and returns a new game"""
         game = Game(user=user,
-                    target=random.choice(range(1, 31 + 1)),
+                    total_points=0,
+                    added_points =0,
+                    target=random.choice(range(1, 32)),
                     attempts_allowed=attempts,
                     attempts_remaining=attempts,
-                    game_over=False)
+                    game_over=False,
+                    won=False)
         game.put()
         return game
 
@@ -40,18 +47,21 @@ class Game(ndb.Model):
         form.urlsafe_key = self.key.urlsafe()
         form.user_name = self.user.get().name
         form.attempts_remaining = self.attempts_remaining
+        form.added_points = self.added_points
+        form.total_points = self.total_points+self.added_points
         form.game_over = self.game_over
+        form.won = self.won
         form.message = message
         return form
 
-    def end_game(self, won=False):
+    def end_game(self, won, added_points):
         """Ends the game - if won is True, the player won. - if won is False,
         the player lost."""
         self.game_over = True
         self.put()
         # Add the game to the score 'board'
         score = Score(user=self.user, date=date.today(), won=won,
-                      guesses=self.attempts_allowed - self.attempts_remaining)
+                      guesses=self.attempts_allowed - self.attempts_remaining, total_points=self.total_points+added_points, added_points=added_points)
         score.put()
 
     def canceled_game(self):
@@ -63,12 +73,15 @@ class Score(ndb.Model):
     """Score object"""
     user = ndb.KeyProperty(required=True, kind='User')
     date = ndb.DateProperty(required=True)
-    won = ndb.BooleanProperty(required=True)
+    won = ndb.BooleanProperty(required=True, default=False)
     guesses = ndb.IntegerProperty(required=True)
+    total_points = ndb.IntegerProperty(required=True, default=0)
+    added_points = ndb.IntegerProperty(required=True, default=0)
+  
 
     def to_form(self):
         return ScoreForm(user_name=self.user.get().name, won=self.won,
-                         date=str(self.date), guesses=self.guesses)
+                         date=str(self.date), guesses=self.guesses, total_points=self.total_points+ self.added_points)
 
 
 class GameForm(messages.Message):
@@ -78,6 +91,9 @@ class GameForm(messages.Message):
     game_over = messages.BooleanField(3, required=True)
     message = messages.StringField(4, required=True)
     user_name = messages.StringField(5, required=True)
+    total_points = messages.IntegerField(6, required=True)
+    added_points = messages.IntegerField(7, required=True)
+    won=messages.BooleanField(8, required=True)
 
 
 class GameForms(messages.Message):
@@ -88,12 +104,13 @@ class GameForms(messages.Message):
 class NewGameForm(messages.Message):
     """Used to create a new game"""
     user_name = messages.StringField(1, required=True)
-    attempts = messages.IntegerField(4, default=5)
+    attempts = messages.IntegerField(2, default=5)
 
 
 class MakeMoveForm(messages.Message):
     """Used to make a move in an existing game"""
     pick_a_date = messages.IntegerField(1, required=True)
+    user_name = messages.StringField(2, required=True)
 
 
 class ScoreForm(messages.Message):
@@ -102,6 +119,8 @@ class ScoreForm(messages.Message):
     date = messages.StringField(2, required=True)
     won = messages.BooleanField(3, required=True)
     guesses = messages.IntegerField(4, required=True)
+    total_points = messages.IntegerField(5, default=0)
+    added_points = messages.IntegerField(6, default=0)
 
 
 class ScoreForms(messages.Message):
@@ -112,3 +131,7 @@ class ScoreForms(messages.Message):
 class StringMessage(messages.Message):
     """StringMessage-- outbound (single) string message"""
     message = messages.StringField(1, required=True)
+
+class LimitResults(messages.Message):
+    """StringMessage-- outbound (single) string message"""
+    limit = messages.IntegerField(1, default=1)
