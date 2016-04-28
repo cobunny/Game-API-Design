@@ -9,6 +9,7 @@ import endpoints
 from protorpc import remote, messages
 from google.appengine.api import memcache
 from google.appengine.api import taskqueue
+from google.appengine.ext import ndb
 
 from models import User, Game, Score
 from models import StringMessage, NewGameForm, GameForm, GameForms, MakeMoveForm, \
@@ -23,7 +24,7 @@ MAKE_MOVE_REQUEST = endpoints.ResourceContainer(
     urlsafe_game_key=messages.StringField(1), )
 
 USER_REQUEST = endpoints.ResourceContainer(user_name=messages.StringField(1, required=True),
-                                           email=messages.StringField(2), total_points=messages.IntegerField(3),)
+                                           email=messages.StringField(2))
 
 MEMCACHE_MOVES_REMAINING = 'MOVES_REMAINING'
 
@@ -42,7 +43,7 @@ class GetYourBonusDayApi(remote.Service):
         if User.query(User.name == request.user_name).get():
             raise endpoints.ConflictException(
                 'A User with that name already exists!')
-        user = User(name=request.user_name, email=request.email, total_points=request.total_points)
+        user = User(name=request.user_name, email=request.email)
         user.put()
         return StringMessage(message='User {} created!'.format(
             request.user_name))
@@ -115,15 +116,18 @@ class GetYourBonusDayApi(remote.Service):
             if game.game_over:
                 return game.to_form('Game already over!')
 
-            if request.pick_a_date > 31:
+            if request.pick_a_date > 31 or request.pick_a_date < 1:
                 raise endpoints.BadRequestException('Invalid date!')
 
             else:
                 game.attempts_remaining -= 1
                 if request.pick_a_date == game.target:
-                    game.added_points = 1
+                    user.num_of_wons +=1
+                    user.put()
+                    game.num_of_wons = user.num_of_wons
                     game.won = True
-                    game.end_game(game.won, game.added_points)
+                    game.end_game(game.won, game.num_of_wons)
+                    game.put()
                     return game.to_form('You win!')
           
                 if request.pick_a_date < game.target:
@@ -132,9 +136,11 @@ class GetYourBonusDayApi(remote.Service):
                     msg = 'A little too late, a bonus comes sooner than that!'
 
                 if game.attempts_remaining < 1:
+                    user.num_of_wons ==user.num_of_wons
+                    user.put()
                     game.won = False
-                    game.added_points = 0
-                    game.end_game(game.won, game.added_points)
+                    game.num_of_wons = user.num_of_wons
+                    game.end_game(game.won, game.num_of_wons)
                     return game.to_form(msg + ' Game over!')
         
                 game.put()
@@ -168,6 +174,7 @@ class GetYourBonusDayApi(remote.Service):
     def get_scores(self, request):
         """Return all scores"""
         scores = Score.query().order(Score.user)
+
         return ScoreForms(items=[score.to_form() for score in scores])
 
     @endpoints.method(request_message=USER_REQUEST,
@@ -192,17 +199,31 @@ class GetYourBonusDayApi(remote.Service):
     def get_high_scores(self, request):
         """Return all scores ordered by total points"""
         if request.limit:
-            scores = Score.query().order(-Score.total_points).fetch(request.limit)
+            scores = Score.query().order(-Score.num_of_wons).fetch(request.limit)
 
         else:
-            scores = Score.query().order(-Score.total_points)
+            scores = Score.query().order(-Score.num_of_wons).get()
 
         return ScoreForms(items=[score.to_form() for score in scores])
+
+
+    @endpoints.method(response_message=ScoreForms,
+                      path='scores/user_rankings',
+                      name='get_user_rankings',
+                      http_method='GET')
+    def get_user_rankings(self, request):
+        """Return all scores ordered by total points"""
+        scores = Score.query().filter(Score.won == True).order(-Score.num_of_wons)
+       
+        return ScoreForms(items=[score.to_form() for score in scores])
+
+
 
     @endpoints.method(response_message=StringMessage,
                       path='games/average_attempts',
                       name='get_average_attempts_remaining',
                       http_method='GET')
+
     def get_average_attempts(self, request):
         """Get the cached average moves remaining"""
         return StringMessage(message=memcache.get(MEMCACHE_MOVES_REMAINING) or '')
