@@ -26,6 +26,7 @@ class Game(ndb.Model):
     num_of_wons = ndb.IntegerProperty(required=True, default=0)
     won = ndb.BooleanProperty(required=True, default=False)
     user = ndb.KeyProperty(required=True, kind='User')
+    
 
     @classmethod
     def new_game(cls, user, attempts):
@@ -36,7 +37,8 @@ class Game(ndb.Model):
                     attempts_allowed=attempts,
                     attempts_remaining=attempts,
                     game_over=False,
-                    won=False)
+                    won=False
+                    )
         game.put()
         return game
 
@@ -78,9 +80,6 @@ class Score(ndb.Model):
     def to_form(self):
         return ScoreForm(user_name=self.user.get().name, won=self.won,
                          date=str(self.date), guesses=self.guesses, num_of_wons=self.num_of_wons)
-
-    # def to_ranking_form(self):
-    #     return RankingForm(user_name=self.user.get().name, num_of_wons=self.num_of_wons)
 
 
 class GameForm(messages.Message):
@@ -124,22 +123,9 @@ class ScoreForms(messages.Message):
     """Return multiple ScoreForms"""
     items = messages.MessageField(ScoreForm, 1, repeated=True)
 
-
-# class RankingForm(messages.Message):
-#     """RankingForm for outbound user ranking information"""
-#     user_name = messages.StringField(1, required=True)
-#     num_of_wons = messages.IntegerField(2, default=0)
-
-
-# class RankingForms(messages.Message):
-#     """Return multiple RankingForms"""
-#     rankings = messages.MessageField(ScoreForm, 1, repeated=True)
-
-
 class StringMessage(messages.Message):
     """StringMessage-- outbound (single) string message"""
     message = messages.StringField(1, required=True)
-
 
 class LimitResults(messages.Message):
     """StringMessage-- outbound (single) string message"""

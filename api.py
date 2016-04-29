@@ -129,7 +129,7 @@ class GetYourBonusDayApi(remote.Service):
                     game.end_game(game.won, game.num_of_wons)
                     game.put()
                     return game.to_form('You win!')
-          
+
                 if request.pick_a_date < game.target:
                     msg = 'Maybe too early for a bonus!'
                 else:
@@ -145,6 +145,7 @@ class GetYourBonusDayApi(remote.Service):
         
                 game.put()
                 return game.to_form(msg)
+
 
         raise endpoints.BadRequestException('User_name not found! Please create your own game to play')
 
@@ -212,11 +213,10 @@ class GetYourBonusDayApi(remote.Service):
                       name='get_user_rankings',
                       http_method='GET')
     def get_user_rankings(self, request):
-        """Return all scores ordered by total points"""
+        """Return all scores ordered by numbers of won"""
         scores = Score.query().filter(Score.won == True).order(-Score.num_of_wons)
        
         return ScoreForms(items=[score.to_form() for score in scores])
-
 
 
     @endpoints.method(response_message=StringMessage,
