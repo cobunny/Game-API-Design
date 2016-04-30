@@ -26,7 +26,7 @@ class Game(ndb.Model):
     num_of_wons = ndb.IntegerProperty(required=True, default=0)
     won = ndb.BooleanProperty(required=True, default=False)
     user = ndb.KeyProperty(required=True, kind='User')
-    
+    history = ndb.PickleProperty(required=True, default=[])
 
     @classmethod
     def new_game(cls, user, attempts):
@@ -37,8 +37,8 @@ class Game(ndb.Model):
                     attempts_allowed=attempts,
                     attempts_remaining=attempts,
                     game_over=False,
-                    won=False
-                    )
+                    won=False)
+        game.history = []
         game.put()
         return game
 
@@ -67,6 +67,14 @@ class Game(ndb.Model):
     def canceled_game(self):
         self.game_canceled = True
         self.put()
+
+    def add_game_history(self, result, guesses):
+        if isinstance(result, str) and isinstance(guesses, int):
+            self.history.append({'message': result, 'nth_guess':guesses})
+            self.history = self.history
+            self.put()
+        else:
+            raise
 
 
 class Score(ndb.Model):

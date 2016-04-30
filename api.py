@@ -56,6 +56,7 @@ class GetYourBonusDayApi(remote.Service):
     def new_game(self, request):
         """Creates new game"""
         user = User.query(User.name == request.user_name).get()
+        # Validate user
         if not user:
             raise endpoints.NotFoundException(
                 'A User with that name does not exist!')
@@ -107,47 +108,61 @@ class GetYourBonusDayApi(remote.Service):
         game = get_by_urlsafe(request.urlsafe_game_key, Game)
 
         user = User.query(User.name == request.user_name).get()
+
+        # Validate user
         if not user:
             raise endpoints.NotFoundException(
                 'A User with that name does not exist!')
 
+        # Validate game and player
         if game and user.key == game.user:
 
+            # Check to see if game is already finished
             if game.game_over:
+                game.add_game_history('Game already over!', game.attempts_allowed - game.attempts_remaining)
                 return game.to_form('Game already over!')
 
+            # Check to see if valid guess
             if request.pick_a_date > 31 or request.pick_a_date < 1:
-                raise endpoints.BadRequestException('Invalid date!')
+                game.add_game_history('Invalid guess! No such date!', game.attempts_allowed - game.attempts_remaining)
+                return game.to_form('Invalid guess! No such date!')
+
 
             else:
                 game.attempts_remaining -= 1
+                 # If the dates match, user win.
                 if request.pick_a_date == game.target:
                     user.num_of_wons +=1
                     user.put()
                     game.num_of_wons = user.num_of_wons
                     game.won = True
+                    game.add_game_history('Congratulations! You picked the correct date.', game.attempts_allowed - game.attempts_remaining)
                     game.end_game(game.won, game.num_of_wons)
                     game.put()
                     return game.to_form('You win!')
 
+                # If guess is incorrect, warn user and try again
                 if request.pick_a_date < game.target:
                     msg = 'Maybe too early for a bonus!'
+                    game.add_game_history('You guessed higher.', game.attempts_allowed - game.attempts_remaining)
                 else:
                     msg = 'A little too late, a bonus comes sooner than that!'
+                    game.add_game_history('You guessed lower.', game.attempts_allowed - game.attempts_remaining)
 
+                # User guesses incorrectly and exceeded limited attempts, so game over  
                 if game.attempts_remaining < 1:
                     user.num_of_wons ==user.num_of_wons
                     user.put()
                     game.won = False
                     game.num_of_wons = user.num_of_wons
+                    game.add_game_history('Incorrect. Game over!', game.attempts_allowed - game.attempts_remaining)
                     game.end_game(game.won, game.num_of_wons)
-                    return game.to_form(msg + ' Game over!')
-        
+                    
                 game.put()
-                return game.to_form(msg)
+                return game.to_form(msg + ' Game over!')
 
 
-        raise endpoints.BadRequestException('User_name not found! Please create your own game to play')
+        raise endpoints.BadRequestException('User_name not found! Or game already created! Or something else...')
 
     @endpoints.method(request_message=GET_GAME_REQUEST, response_message=StringMessage,
                       path='game/{urlsafe_game_key}/cancel',
@@ -217,6 +232,21 @@ class GetYourBonusDayApi(remote.Service):
         scores = Score.query().filter(Score.won == True).order(-Score.num_of_wons)
        
         return ScoreForms(items=[score.to_form() for score in scores])
+
+
+    @endpoints.method(request_message=GET_GAME_REQUEST,
+                      response_message=StringMessage,
+                      path='game/{urlsafe_game_key}/history',
+                      name='get_game_history',
+                      http_method='GET')
+    def get_game_history(self, request):
+        """Returns a summary of a game's guesses."""
+        game = get_by_urlsafe(request.urlsafe_game_key, Game)
+        if not game:
+            raise endpoints.NotFoundException('Game not found')
+       
+        return StringMessage(message=str(game.history))
+
 
 
     @endpoints.method(response_message=StringMessage,
