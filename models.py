@@ -13,6 +13,7 @@ class User(ndb.Model):
     name = ndb.StringProperty(required=True)
     email = ndb.StringProperty()
     num_of_wons = ndb.IntegerProperty(required=True, default=0)
+    game_over = ndb.BooleanProperty(required=True, default=False)
     games_played = ndb.StringProperty(repeated=True)
 
 

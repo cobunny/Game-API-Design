@@ -120,6 +120,8 @@ class GetYourBonusDayApi(remote.Service):
             # Check to see if game is already finished
             if game.game_over:
                 game.add_game_history('Game already over!', game.attempts_allowed - game.attempts_remaining)
+                user.game_over = True
+                user.put()
                 return game.to_form('Game already over!')
 
             # Check to see if valid guess
@@ -133,6 +135,7 @@ class GetYourBonusDayApi(remote.Service):
                  # If the dates match, user win.
                 if request.pick_a_date == game.target:
                     user.num_of_wons +=1
+                    user.game_over= True
                     user.put()
                     game.num_of_wons = user.num_of_wons
                     game.won = True
@@ -152,6 +155,7 @@ class GetYourBonusDayApi(remote.Service):
                 # User guesses incorrectly and exceeded limited attempts, so game over  
                 if game.attempts_remaining < 1:
                     user.num_of_wons ==user.num_of_wons
+                    user.game_over = True
                     user.put()
                     game.won = False
                     game.num_of_wons = user.num_of_wons
