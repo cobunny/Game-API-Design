@@ -119,7 +119,7 @@ class GetYourBonusDayApi(remote.Service):
                       response_message=GameForm,
                       path='game/{urlsafe_game_key}',
                       name='make_move',
-                      http_method='PUT')
+                      http_method='PUT' or 'DELETE')
     def make_move(self, request):
         """Makes a move. Returns a game state with message"""
 
@@ -141,6 +141,7 @@ class GetYourBonusDayApi(remote.Service):
             # Check to see if game is already finished
             if game.game_over:
                 game.add_game_history('Game already over!', game.attempts_allowed - game.attempts_remaining)
+                game.key.delete()
                 user.game_over = True
                 user.put()
                 return game.to_form('Game already over!')
@@ -164,6 +165,7 @@ class GetYourBonusDayApi(remote.Service):
                                           game.attempts_allowed - game.attempts_remaining)
                     game.end_game(game.won, game.num_of_wons)
                     game.put()
+                    game.key.delete()
                     return game.to_form('You win!')
 
                 # If guess is incorrect, warn user and try again
@@ -184,7 +186,9 @@ class GetYourBonusDayApi(remote.Service):
                     game.add_game_history('Incorrect. Game over!', game.attempts_allowed - game.attempts_remaining)
                     game.end_game(game.won, game.num_of_wons)
 
+
                 game.put()
+                game.key.delete()
                 return game.to_form(msg + ' Game over!')
 
         raise endpoints.BadRequestException('User_name not found! Or game already created! Or something else...')
@@ -247,7 +251,7 @@ class GetYourBonusDayApi(remote.Service):
             scores = Score.query().order(-Score.num_of_wons).fetch(request.limit)
 
         else:
-            scores = Score.query().order(-Score.num_of_wons).get()
+            scores = Score.query().order(-Score.num_of_wons).fetch()
 
         return ScoreForms(items=[score.to_form() for score in scores])
 
