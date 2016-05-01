@@ -14,7 +14,7 @@ class User(ndb.Model):
     email = ndb.StringProperty()
     num_of_wons = ndb.IntegerProperty(required=True, default=0)
     game_over = ndb.BooleanProperty(required=True, default=False)
-    games_played = ndb.StringProperty(repeated=True)
+    attempts_allowed = ndb.IntegerProperty()
 
 
 class Game(ndb.Model):
@@ -71,7 +71,7 @@ class Game(ndb.Model):
 
     def add_game_history(self, result, guesses):
         if isinstance(result, str) and isinstance(guesses, int):
-            self.history.append({'message': result, 'nth_guess':guesses})
+            self.history.append({'message': result, 'nth_guess': guesses})
             self.history = self.history
             self.put()
         else:
@@ -132,9 +132,11 @@ class ScoreForms(messages.Message):
     """Return multiple ScoreForms"""
     items = messages.MessageField(ScoreForm, 1, repeated=True)
 
+
 class StringMessage(messages.Message):
     """StringMessage-- outbound (single) string message"""
     message = messages.StringField(1, required=True)
+
 
 class LimitResults(messages.Message):
     """StringMessage-- outbound (single) string message"""

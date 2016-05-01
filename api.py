@@ -29,10 +29,13 @@ USER_REQUEST = endpoints.ResourceContainer(user_name=messages.StringField(1, req
 MEMCACHE_MOVES_REMAINING = 'MOVES_REMAINING'
 
 
+# - - - - GetYourBonusDayApi Endpoints - - - - - - - - - - - - - - - - - - - - - - - - -
+
 @endpoints.api(name='get_your_bonus_day', version='v1')
 class GetYourBonusDayApi(remote.Service):
     """Game API"""
 
+    # - - - - Create user endpoint - - - - - - - - - - - - - - - 
     @endpoints.method(request_message=USER_REQUEST,
                       response_message=StringMessage,
                       path='user',
@@ -48,6 +51,7 @@ class GetYourBonusDayApi(remote.Service):
         return StringMessage(message='User {} created!'.format(
             request.user_name))
 
+    # - - - - New game endpoint - - - - - - - - - - - - - - -
     @endpoints.method(request_message=NEW_GAME_REQUEST,
                       response_message=GameForm,
                       path='game',
@@ -61,7 +65,18 @@ class GetYourBonusDayApi(remote.Service):
             raise endpoints.NotFoundException(
                 'A User with that name does not exist!')
 
+        # Check to see if game already exist.
+        if user.key and request.attempts:
+            games = Game.query(Game.user == user.key)
+            for game in games:
+                if game and game.attempts_allowed == request.attempts:
+                    raise endpoints.ConflictException(
+                        'Game with key: {} already exist!'.
+                            format(game.key.urlsafe()))
+
         game = Game.new_game(user.key, request.attempts)
+        user.attempts_allowed = request.attempts
+        user.put()
 
         # Use a task queue to update the average attempts remaining.
         # This operation is not needed to complete the creation of a new game
@@ -69,6 +84,7 @@ class GetYourBonusDayApi(remote.Service):
         taskqueue.add(url='/tasks/cache_average_attempts')
         return game.to_form('Good luck playing Get Your Bonus Day!')
 
+    # - - - - Get game endpoint - - - - - - - - - - - - - - -
     @endpoints.method(request_message=GET_GAME_REQUEST,
                       response_message=GameForm,
                       path='game/{urlsafe_game_key}',
@@ -82,6 +98,7 @@ class GetYourBonusDayApi(remote.Service):
         else:
             raise endpoints.NotFoundException('Game not found!')
 
+    # - - - - Get user game endpoint - - - - - - - - - - - - - - -
     @endpoints.method(request_message=USER_REQUEST,
                       response_message=GameForms,
                       path='games/user/{user_name}',
@@ -97,6 +114,7 @@ class GetYourBonusDayApi(remote.Service):
             filter(Game.game_over == False)
         return GameForms(items=[game.to_form('Time to make a move!') for game in games])
 
+    # - - - - Make move endpoint - - - - - - - - - - - - - - -
     @endpoints.method(request_message=MAKE_MOVE_REQUEST,
                       response_message=GameForm,
                       path='game/{urlsafe_game_key}',
@@ -117,6 +135,9 @@ class GetYourBonusDayApi(remote.Service):
         # Validate game and player
         if game and user.key == game.user:
 
+            user.attempts_allowed = game.attempts_allowed
+            user.put()
+
             # Check to see if game is already finished
             if game.game_over:
                 game.add_game_history('Game already over!', game.attempts_allowed - game.attempts_remaining)
@@ -132,14 +153,15 @@ class GetYourBonusDayApi(remote.Service):
 
             else:
                 game.attempts_remaining -= 1
-                 # If the dates match, user win.
+                # If the dates match, user win.
                 if request.pick_a_date == game.target:
-                    user.num_of_wons +=1
-                    user.game_over= True
+                    user.num_of_wons += 1
+                    user.game_over = True
                     user.put()
                     game.num_of_wons = user.num_of_wons
                     game.won = True
-                    game.add_game_history('Congratulations! You picked the correct date.', game.attempts_allowed - game.attempts_remaining)
+                    game.add_game_history('Congratulations! You picked the correct date.',
+                                          game.attempts_allowed - game.attempts_remaining)
                     game.end_game(game.won, game.num_of_wons)
                     game.put()
                     return game.to_form('You win!')
@@ -154,20 +176,20 @@ class GetYourBonusDayApi(remote.Service):
 
                 # User guesses incorrectly and exceeded limited attempts, so game over  
                 if game.attempts_remaining < 1:
-                    user.num_of_wons ==user.num_of_wons
+                    user.num_of_wons == user.num_of_wons
                     user.game_over = True
                     user.put()
                     game.won = False
                     game.num_of_wons = user.num_of_wons
                     game.add_game_history('Incorrect. Game over!', game.attempts_allowed - game.attempts_remaining)
                     game.end_game(game.won, game.num_of_wons)
-                    
+
                 game.put()
                 return game.to_form(msg + ' Game over!')
 
-
         raise endpoints.BadRequestException('User_name not found! Or game already created! Or something else...')
 
+    # - - - - Cancel game endpoint - - - - - - - - - - - - - - -
     @endpoints.method(request_message=GET_GAME_REQUEST, response_message=StringMessage,
                       path='game/{urlsafe_game_key}/cancel',
                       http_method='DELETE', name='cancel_game')
@@ -187,6 +209,7 @@ class GetYourBonusDayApi(remote.Service):
         else:
             raise endpoints.NotFoundException('That game does not exist!')
 
+    # - - - - Get scores endpoint - - - - - - - - - - - - - - -
     @endpoints.method(response_message=ScoreForms,
                       path='scores',
                       name='get_scores',
@@ -197,6 +220,7 @@ class GetYourBonusDayApi(remote.Service):
 
         return ScoreForms(items=[score.to_form() for score in scores])
 
+    # - - - - Get user scores endpoint - - - - - - - - - - - - - - -
     @endpoints.method(request_message=USER_REQUEST,
                       response_message=ScoreForms,
                       path='scores/user/{user_name}',
@@ -211,6 +235,7 @@ class GetYourBonusDayApi(remote.Service):
         scores = Score.query(Score.user == user.key)
         return ScoreForms(items=[score.to_form() for score in scores])
 
+    # - - - - Get high scores endpoint - - - - - - - - - - - - - - -
     @endpoints.method(request_message=LimitResults,
                       response_message=ScoreForms,
                       path='scores/high_scores',
@@ -226,7 +251,7 @@ class GetYourBonusDayApi(remote.Service):
 
         return ScoreForms(items=[score.to_form() for score in scores])
 
-
+    # - - - - Get user rankings endpoint - - - - - - - - - - - - - - -
     @endpoints.method(response_message=ScoreForms,
                       path='scores/user_rankings',
                       name='get_user_rankings',
@@ -234,10 +259,10 @@ class GetYourBonusDayApi(remote.Service):
     def get_user_rankings(self, request):
         """Return all scores ordered by numbers of won"""
         scores = Score.query().filter(Score.won == True).order(-Score.num_of_wons)
-       
+
         return ScoreForms(items=[score.to_form() for score in scores])
 
-
+    # - - - - Get game history endpoint - - - - - - - - - - - - - - -
     @endpoints.method(request_message=GET_GAME_REQUEST,
                       response_message=StringMessage,
                       path='game/{urlsafe_game_key}/history',
@@ -248,16 +273,14 @@ class GetYourBonusDayApi(remote.Service):
         game = get_by_urlsafe(request.urlsafe_game_key, Game)
         if not game:
             raise endpoints.NotFoundException('Game not found')
-       
+
         return StringMessage(message=str(game.history))
 
-
-
+    # - - - - Get average attempts remaining endpoint - - - - - - - - - - - - - - -
     @endpoints.method(response_message=StringMessage,
                       path='games/average_attempts',
                       name='get_average_attempts_remaining',
                       http_method='GET')
-
     def get_average_attempts(self, request):
         """Get the cached average moves remaining"""
         return StringMessage(message=memcache.get(MEMCACHE_MOVES_REMAINING) or '')
