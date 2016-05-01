@@ -13,9 +13,10 @@ get_your_bonus_day is a single-player number guessing game. Player picks a date,
 (Assume 31 days in a month).  'pick_a_dates' are sent to the `make_move` endpoint which will reply
 with either: 'too early', 'too late', 'you win', or 'game over' (if the maximum
 number of attempts is reached).
-Many different get_your_bonus_day games can be played by many different Users at any
-given time. Each game can be retrieved or played by using the path parameter
-`urlsafe_game_key`.
+Many different get_your_bonus_day games can be played by many different users at any
+given time.  A user can create & play different games at the same time.  However when replaying an existing game, 
+the previous session of that game with all its records will be deleted from the database.  Each game can be retrieved 
+or played by using the path parameter `urlsafe_game_key`.
 
 ##Files Included:
  - api.py: Contains endpoints and game playing logic.
@@ -40,10 +41,9 @@ given time. Each game can be retrieved or played by using the path parameter
     - Parameters: `user_name`, `attempts`
     - Returns: GameForm with initial game state.
     - Description: Creates a new Game. `user_name` provided must correspond to an
-    existing user - will raise a NotFoundException if not. Number of `attempts` must 
-    NOT be the same as any existing game `attempts` number created by current `user_name`. 
-    Also adds a task to a task queue to update the average moves remaining for active 
-    games.
+    existing user - will raise a NotFoundException if not. If the number of `attempts` is the same as any existing game 
+    `attempts` number, created with the `user_name`, the previously created game with all its records will be deleted
+    from database.  Also adds a task to a task queue to update the average moves remaining for active games.
      
  - **get_game**
     - Path: 'game/{urlsafe_game_key}'

@@ -70,9 +70,7 @@ class GetYourBonusDayApi(remote.Service):
             games = Game.query(Game.user == user.key)
             for game in games:
                 if game and game.attempts_allowed == request.attempts:
-                    raise endpoints.ConflictException(
-                        'Game with key: {} already exist!'.
-                            format(game.key.urlsafe()))
+                    game.key.delete()
 
         game = Game.new_game(user.key, request.attempts)
         user.attempts_allowed = request.attempts
@@ -141,7 +139,6 @@ class GetYourBonusDayApi(remote.Service):
             # Check to see if game is already finished
             if game.game_over:
                 game.add_game_history('Game already over!', game.attempts_allowed - game.attempts_remaining)
-                game.key.delete()
                 user.game_over = True
                 user.put()
                 return game.to_form('Game already over!')
@@ -150,7 +147,6 @@ class GetYourBonusDayApi(remote.Service):
             if request.pick_a_date > 31 or request.pick_a_date < 1:
                 game.add_game_history('Invalid guess! No such date!', game.attempts_allowed - game.attempts_remaining)
                 return game.to_form('Invalid guess! No such date!')
-
 
             else:
                 game.attempts_remaining -= 1
@@ -165,7 +161,6 @@ class GetYourBonusDayApi(remote.Service):
                                           game.attempts_allowed - game.attempts_remaining)
                     game.end_game(game.won, game.num_of_wons)
                     game.put()
-                    game.key.delete()
                     return game.to_form('You win!')
 
                 # If guess is incorrect, warn user and try again
@@ -188,10 +183,9 @@ class GetYourBonusDayApi(remote.Service):
 
 
                 game.put()
-                game.key.delete()
                 return game.to_form(msg + ' Game over!')
 
-        raise endpoints.BadRequestException('User_name not found! Or game already created! Or something else...')
+        raise endpoints.BadRequestException('User_name not found! Or game already over! Or something else...')
 
     # - - - - Cancel game endpoint - - - - - - - - - - - - - - -
     @endpoints.method(request_message=GET_GAME_REQUEST, response_message=StringMessage,
