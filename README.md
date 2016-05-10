@@ -1,4 +1,4 @@
-#Game-API-Design: get_your_bonus_day
+#Game-API-Design:
 
 ## Set-Up Instructions:
 1.  Update the value of application in app.yaml to the app ID you have registered
@@ -9,11 +9,11 @@
  Deploy your application. 
  
 ##Game Description:
-get_your_bonus_day is a single-player number guessing game. Player picks a date, ranging from 1st to 31st.
+This is a two-player number guessing game. Player picks a date, ranging from 1st to 31st.
 (Assume 31 days in a month).  'pick_a_dates' are sent to the `make_move` endpoint which will reply
 with either: 'too early', 'too late', 'you win', or 'game over' (if the maximum
 number of attempts is reached).
-Many different get_your_bonus_day games can be played by many different users at any
+Different games can be played by many different users at any
 given time.  A user can create & play different games at the same time.  However when replaying an existing game, 
 the previous session of that game with all its records will be deleted from the database.  Each game can be retrieved 
 or played by using the path parameter `urlsafe_game_key`.
@@ -38,12 +38,14 @@ or played by using the path parameter `urlsafe_game_key`.
  - **new_game**
     - Path: 'game'
     - Method: POST
-    - Parameters: `user_name`, `attempts`
+    - Parameters: `dealer_name`, `gambler_name`, `attempts`
     - Returns: GameForm with initial game state.
-    - Description: Creates a new Game. `user_name` provided must correspond to an
-    existing user - will raise a NotFoundException if not. If the number of `attempts` is the same as any existing game 
-    `attempts` number, created with the `user_name`, the previously created game with all its records will be deleted
-    from database.  Also adds a task to a task queue to update the average moves remaining for active games.
+    - Description: Creates a new Game. `dealer_name` and `gambler_name`provided must correspond to an existing 
+    user - will raise a NotFoundException if not. To increase game's difficulty level, Number of `attempts` must be less 
+    than 30 and greater than 1.  Otherwise, a form with a warning message will be returned.  If game is already exist 
+    and not completed, the existing game form will be returned.  But if the existing game is completed, a new game form
+    will be returned and the existing game's record will be overwritten by the new game's record.  Also adds a task to 
+    a task queue to update the average moves remaining for active games.
      
  - **get_game**
     - Path: 'game/{urlsafe_game_key}'
@@ -91,20 +93,21 @@ or played by using the path parameter `urlsafe_game_key`.
     Will raise a NotFoundException if the User does not exist.
     
  - **get_high_scores**
-    - Path: 'scores/high_scores'
+    - Path: 'user/high_scores'
     - Method: GET
     - Parameters: `LimitResults`
-    - Returns: ScoreForms
+    - Returns: UserForms
     - Description: Returns number of Scores in the database limited by `LimitResults` and ordered by `num_of_wons` in 
      descending order.
-    Will returns all Scores in the database if there's no value from `LimitResults`.
+    Will returns all Scores in the database if there's no value from `LimitResults` and ordered by `User.name` in 
+    Alphabetical order
  
- - **get_user_rankings**
-    - Path: 'scores/user_rankings'
+ - **get_rankings**
+    - Path: 'user/rankings'
     - Method: GET
     - Parameters: None
-    - Returns: ScoreForms
-    - Description: Returns all winning Scores in the database ordered by `num_of_wons` in descending order.
+    - Returns: UserForms
+    - Description: Returns all Scores in the database ordered by users' `total_points` records in descending order.
     
  - **get_game_history**
     - Path: 'game/{urlsafe_game_key}/history'
@@ -147,6 +150,10 @@ or played by using the path parameter `urlsafe_game_key`.
     guesses).
  - **ScoreForms**
     - Multiple ScoreForm container.
+ - **UserForm**
+    - Representation of a user profile.
+ - **UserForms**
+    - Multiple UserForm container. 
  - **StringMessage**
     - General purpose String container.
  - **LimitResults**

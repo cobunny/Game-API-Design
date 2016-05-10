@@ -12,28 +12,34 @@ class User(ndb.Model):
     """User profile"""
     name = ndb.StringProperty(required=True)
     email = ndb.StringProperty()
-    num_of_wons = ndb.IntegerProperty(required=True, default=0)
-    game_over = ndb.BooleanProperty(required=True, default=False)
-    attempts_allowed = ndb.IntegerProperty()
+    total_points = ndb.IntegerProperty(required=True, default=0)
+
+    def to_form(self):
+        """Returns UserForm"""
+        form = UserForm()
+        form.name = self.name
+        form.email = self.email
+        form.total_points = self.total_points
+        return form
 
 
 class Game(ndb.Model):
     """Game object"""
     target = ndb.IntegerProperty(required=True)
     attempts_allowed = ndb.IntegerProperty(required=True)
-    attempts_remaining = ndb.IntegerProperty(required=True, default=5)
+    attempts_remaining = ndb.IntegerProperty(required=True)
     game_canceled = ndb.BooleanProperty(required=True, default=False)
     game_over = ndb.BooleanProperty(required=True, default=False)
-    num_of_wons = ndb.IntegerProperty(required=True, default=0)
     won = ndb.BooleanProperty(required=True, default=False)
-    user = ndb.KeyProperty(required=True, kind='User')
+    dealer = ndb.KeyProperty(required=True, kind='User')
+    gambler = ndb.KeyProperty(required=True, kind='User')
     history = ndb.PickleProperty(required=True, default=[])
 
     @classmethod
-    def new_game(cls, user, attempts):
+    def new_game(cls, dealer, gambler, attempts):
         """Creates and returns a new game"""
-        game = Game(user=user,
-                    num_of_wons=0,
+        game = Game(dealer=dealer,
+                    gambler=gambler,
                     target=random.choice(range(1, 32)),
                     attempts_allowed=attempts,
                     attempts_remaining=attempts,
@@ -47,22 +53,26 @@ class Game(ndb.Model):
         """Returns a GameForm representation of the Game"""
         form = GameForm()
         form.urlsafe_key = self.key.urlsafe()
-        form.user_name = self.user.get().name
+        form.dealer_name = self.dealer.get().name
+        form.gambler_name = self.gambler.get().name
         form.attempts_remaining = self.attempts_remaining
-        form.num_of_wons = self.num_of_wons
+        form.dealer_total_points = self.dealer.get().total_points
+        form.gambler_total_points = self.gambler.get().total_points
         form.game_over = self.game_over
         form.won = self.won
         form.message = message
         return form
 
-    def end_game(self, won, num_of_wons):
+    def end_game(self, won, dealer, gambler):
         """Ends the game - if won is True, the player won. - if won is False,
         the player lost."""
         self.game_over = True
+        self.dealer = dealer
+        self.gambler = gambler
         self.put()
         # Add the game to the score 'board'
-        score = Score(user=self.user, date=date.today(), won=won,
-                      guesses=self.attempts_allowed - self.attempts_remaining, num_of_wons=num_of_wons)
+        score = Score(dealer=self.dealer, gambler=self.gambler, date=date.today(), won=won,
+                      guesses=self.attempts_allowed - self.attempts_remaining)
         score.put()
 
     def canceled_game(self):
@@ -80,15 +90,16 @@ class Game(ndb.Model):
 
 class Score(ndb.Model):
     """Score object"""
-    user = ndb.KeyProperty(required=True, kind='User')
+    dealer = ndb.KeyProperty(required=True, kind='User')
+    gambler = ndb.KeyProperty(required=True, kind='User')
     date = ndb.DateProperty(required=True)
     won = ndb.BooleanProperty(required=True, default=False)
     guesses = ndb.IntegerProperty(required=True)
-    num_of_wons = ndb.IntegerProperty(required=True, default=0)
 
     def to_form(self):
-        return ScoreForm(user_name=self.user.get().name, won=self.won,
-                         date=str(self.date), guesses=self.guesses, num_of_wons=self.num_of_wons)
+        return ScoreForm(dealer_name=self.dealer.get().name, gambler_name=self.gambler.get().name, won=self.won,
+                         date=str(self.date), guesses=self.guesses, dealer_total_points=self.dealer.get().total_points,
+                         gambler_total_points=self.gambler.get().total_points)
 
 
 class GameForm(messages.Message):
@@ -97,9 +108,11 @@ class GameForm(messages.Message):
     attempts_remaining = messages.IntegerField(2, required=True)
     game_over = messages.BooleanField(3, required=True)
     message = messages.StringField(4, required=True)
-    user_name = messages.StringField(5, required=True)
-    num_of_wons = messages.IntegerField(6, required=True)
-    won = messages.BooleanField(8, required=True)
+    dealer_name = messages.StringField(5, required=True)
+    gambler_name = messages.StringField(6, required=True)
+    dealer_total_points = messages.IntegerField(7, required=True)
+    gambler_total_points = messages.IntegerField(8, required=True)
+    won = messages.BooleanField(9, required=True)
 
 
 class GameForms(messages.Message):
@@ -109,28 +122,42 @@ class GameForms(messages.Message):
 
 class NewGameForm(messages.Message):
     """Used to create a new game"""
-    user_name = messages.StringField(1, required=True)
-    attempts = messages.IntegerField(2, default=5)
+    gambler_name = messages.StringField(1, required=True)
+    dealer_name = messages.StringField(2, required=True)
+    attempts = messages.IntegerField(3, required=True)
 
 
 class MakeMoveForm(messages.Message):
     """Used to make a move in an existing game"""
     pick_a_date = messages.IntegerField(1, required=True)
-    user_name = messages.StringField(2, required=True)
 
 
 class ScoreForm(messages.Message):
     """ScoreForm for outbound Score information"""
-    user_name = messages.StringField(1, required=True)
-    date = messages.StringField(2, required=True)
-    won = messages.BooleanField(3, required=True)
-    guesses = messages.IntegerField(4, required=True)
-    num_of_wons = messages.IntegerField(5, default=0)
+    gambler_name = messages.StringField(1, required=True)
+    dealer_name = messages.StringField(2, required=True)
+    date = messages.StringField(3, required=True)
+    won = messages.BooleanField(4, required=True)
+    guesses = messages.IntegerField(5, required=True)
+    dealer_total_points = messages.IntegerField(6, required=True)
+    gambler_total_points = messages.IntegerField(7, required=True)
 
 
 class ScoreForms(messages.Message):
     """Return multiple ScoreForms"""
     items = messages.MessageField(ScoreForm, 1, repeated=True)
+
+
+class UserForm(messages.Message):
+    """ScoreForm for outbound Score information"""
+    name = messages.StringField(1, required=True)
+    email = messages.StringField(2)
+    total_points = messages.IntegerField(3, required=True)
+
+
+class UserForms(messages.Message):
+    """Return multiple UserForms"""
+    items = messages.MessageField(UserForm, 1, repeated=True)
 
 
 class StringMessage(messages.Message):

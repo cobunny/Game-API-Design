@@ -13,7 +13,7 @@ from google.appengine.ext import ndb
 
 from models import User, Game, Score
 from models import StringMessage, NewGameForm, GameForm, GameForms, MakeMoveForm, \
-    ScoreForms, LimitResults
+    ScoreForms, LimitResults, UserForm, UserForms
 from utils import get_by_urlsafe
 
 NEW_GAME_REQUEST = endpoints.ResourceContainer(NewGameForm)
@@ -29,10 +29,10 @@ USER_REQUEST = endpoints.ResourceContainer(user_name=messages.StringField(1, req
 MEMCACHE_MOVES_REMAINING = 'MOVES_REMAINING'
 
 
-# - - - - GetYourBonusDayApi Endpoints - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - GameAPIDesign Endpoints - - - - - - - - - - - - - - - - - - - - - - - - -
 
-@endpoints.api(name='get_your_bonus_day', version='v1')
-class GetYourBonusDayApi(remote.Service):
+@endpoints.api(name='gameapidesign', version='v1')
+class GameAPIDesign(remote.Service):
     """Game API"""
 
     # - - - - Create user endpoint - - - - - - - - - - - - - - - 
@@ -59,22 +59,25 @@ class GetYourBonusDayApi(remote.Service):
                       http_method='POST')
     def new_game(self, request):
         """Creates new game"""
-        user = User.query(User.name == request.user_name).get()
+        dealer = User.query(User.name == request.dealer_name).get()
+        gambler = User.query(User.name == request.gambler_name).get()
         # Validate user
-        if not user:
+        if not dealer and gambler:
             raise endpoints.NotFoundException(
                 'A User with that name does not exist!')
 
-        # Check to see if game already exist.
-        if user.key and request.attempts:
-            games = Game.query(Game.user == user.key)
-            for game in games:
-                if game and game.attempts_allowed == request.attempts:
-                    game.key.delete()
+        if request.attempts < 1 or request.attempts > 30:
+            raise endpoints.BadRequestException('Number of attempts must be less than 30 and greater than 1')
 
-        game = Game.new_game(user.key, request.attempts)
-        user.attempts_allowed = request.attempts
-        user.put()
+        # Check to see if game already exist.
+        games = Game.query(ndb.AND(Game.gambler == gambler.key, Game.dealer == dealer.key)).fetch()
+
+        if games:
+            for game in games:
+                if game.attempts_allowed == request.attempts and game.game_over == False:
+                    return game.to_form('Game already exist. Continue to play!')
+
+        game = Game.new_game(dealer.key, gambler.key, request.attempts)
 
         # Use a task queue to update the average attempts remaining.
         # This operation is not needed to complete the creation of a new game
@@ -108,7 +111,8 @@ class GetYourBonusDayApi(remote.Service):
         if not user:
             raise endpoints.NotFoundException(
                 'A User with that name does not exist!')
-        games = Game.query(Game.user == user.key). \
+
+        games = Game.query(ndb.OR(Game.dealer == user.key, Game.gambler == user.key)). \
             filter(Game.game_over == False)
         return GameForms(items=[game.to_form('Time to make a move!') for game in games])
 
@@ -117,30 +121,18 @@ class GetYourBonusDayApi(remote.Service):
                       response_message=GameForm,
                       path='game/{urlsafe_game_key}',
                       name='make_move',
-                      http_method='PUT' or 'DELETE')
+                      http_method='PUT')
     def make_move(self, request):
         """Makes a move. Returns a game state with message"""
 
         game = get_by_urlsafe(request.urlsafe_game_key, Game)
-
-        user = User.query(User.name == request.user_name).get()
-
-        # Validate user
-        if not user:
-            raise endpoints.NotFoundException(
-                'A User with that name does not exist!')
-
-        # Validate game and player
-        if game and user.key == game.user:
-
-            user.attempts_allowed = game.attempts_allowed
-            user.put()
+        if game:
+            dealer = game.dealer.get()
+            gambler = game.gambler.get()
 
             # Check to see if game is already finished
             if game.game_over:
                 game.add_game_history('Game already over!', game.attempts_allowed - game.attempts_remaining)
-                user.game_over = True
-                user.put()
                 return game.to_form('Game already over!')
 
             # Check to see if valid guess
@@ -148,22 +140,26 @@ class GetYourBonusDayApi(remote.Service):
                 game.add_game_history('Invalid guess! No such date!', game.attempts_allowed - game.attempts_remaining)
                 return game.to_form('Invalid guess! No such date!')
 
+
             else:
                 game.attempts_remaining -= 1
-                # If the dates match, user win.
+                # If the dates match, gambler win.
                 if request.pick_a_date == game.target:
-                    user.num_of_wons += 1
-                    user.game_over = True
-                    user.put()
-                    game.num_of_wons = user.num_of_wons
+                    if game.attempts_remaining > int(game.attempts_allowed / 2):
+                        gambler.total_points += 2
+                        dealer.total_points -= 2
+                    gambler.total_points += 1
+                    dealer.total_points -= 1
+                    dealer.put()
+                    gambler.put()
                     game.won = True
                     game.add_game_history('Congratulations! You picked the correct date.',
                                           game.attempts_allowed - game.attempts_remaining)
-                    game.end_game(game.won, game.num_of_wons)
+                    game.end_game(game.won, dealer.key, gambler.key)
                     game.put()
                     return game.to_form('You win!')
 
-                # If guess is incorrect, warn user and try again
+                # If guess is incorrect, warn gambler and try again
                 if request.pick_a_date < game.target:
                     msg = 'Maybe too early for a bonus!'
                     game.add_game_history('You guessed higher.', game.attempts_allowed - game.attempts_remaining)
@@ -171,19 +167,20 @@ class GetYourBonusDayApi(remote.Service):
                     msg = 'A little too late, a bonus comes sooner than that!'
                     game.add_game_history('You guessed lower.', game.attempts_allowed - game.attempts_remaining)
 
-                # User guesses incorrectly and exceeded limited attempts, so game over  
+                # Gambler guesses incorrectly and exceeded limited attempts, so game over.
                 if game.attempts_remaining < 1:
-                    user.num_of_wons == user.num_of_wons
-                    user.game_over = True
-                    user.put()
+                    gambler.total_points -= 1
+                    dealer.total_points += 1
+                    dealer.put()
+                    gambler.put()
                     game.won = False
-                    game.num_of_wons = user.num_of_wons
                     game.add_game_history('Incorrect. Game over!', game.attempts_allowed - game.attempts_remaining)
-                    game.end_game(game.won, game.num_of_wons)
-
-
-                game.put()
-                return game.to_form(msg + ' Game over!')
+                    game.end_game(game.won, dealer.key, gambler.key)
+                    game.put()
+                    return game.to_form(msg + ' Game over!')
+                else:
+                    game.put()
+                    return game.to_form(msg)
 
         raise endpoints.BadRequestException('User_name not found! Or game already over! Or something else...')
 
@@ -214,7 +211,7 @@ class GetYourBonusDayApi(remote.Service):
                       http_method='GET')
     def get_scores(self, request):
         """Return all scores"""
-        scores = Score.query().order(Score.user)
+        scores = Score.query().order(-Score.date)
 
         return ScoreForms(items=[score.to_form() for score in scores])
 
@@ -230,35 +227,34 @@ class GetYourBonusDayApi(remote.Service):
         if not user:
             raise endpoints.NotFoundException(
                 'A User with that name does not exist!')
-        scores = Score.query(Score.user == user.key)
+        scores = Score.query(ndb.OR(Score.dealer == user.key, Score.gambler == user.key))
         return ScoreForms(items=[score.to_form() for score in scores])
 
     # - - - - Get high scores endpoint - - - - - - - - - - - - - - -
     @endpoints.method(request_message=LimitResults,
-                      response_message=ScoreForms,
-                      path='scores/high_scores',
+                      response_message=UserForms,
+                      path='user/high_scores',
                       name='get_high_scores',
                       http_method='GET')
     def get_high_scores(self, request):
         """Return all scores ordered by total points"""
         if request.limit:
-            scores = Score.query().order(-Score.num_of_wons).fetch(request.limit)
-
+            users = User.query().order(-User.total_points).fetch(request.limit)
         else:
-            scores = Score.query().order(-Score.num_of_wons).fetch()
+            users = User.query().order(User.name).fetch()
 
-        return ScoreForms(items=[score.to_form() for score in scores])
+        return UserForms(items=[user.to_form() for user in users])
 
     # - - - - Get user rankings endpoint - - - - - - - - - - - - - - -
-    @endpoints.method(response_message=ScoreForms,
-                      path='scores/user_rankings',
-                      name='get_user_rankings',
+    @endpoints.method(response_message=UserForms,
+                      path='user/rankings',
+                      name='get_rankings',
                       http_method='GET')
-    def get_user_rankings(self, request):
-        """Return all scores ordered by numbers of won"""
-        scores = Score.query().filter(Score.won == True).order(-Score.num_of_wons)
+    def get_rankings(self, request):
+        """Returns all players ranked by their total points."""
+        users = User.query().order(-User.total_points).fetch()
 
-        return ScoreForms(items=[score.to_form() for score in scores])
+        return UserForms(items=[user.to_form() for user in users])
 
     # - - - - Get game history endpoint - - - - - - - - - - - - - - -
     @endpoints.method(request_message=GET_GAME_REQUEST,
@@ -296,4 +292,4 @@ class GetYourBonusDayApi(remote.Service):
                          'The average moves remaining is {:.2f}'.format(average))
 
 
-api = endpoints.api_server([GetYourBonusDayApi])
+api = endpoints.api_server([GameAPIDesign])
