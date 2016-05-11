@@ -63,7 +63,7 @@ class GameAPIDesign(remote.Service):
         dealer = User.query(User.name == request.dealer_name).get()
         gambler = User.query(User.name == request.gambler_name).get()
         # Validate user
-        if not dealer and gambler:
+        if not dealer or not gambler or not dealer and gambler:
             raise endpoints.NotFoundException(
                 'A User with that name does not exist!')
 
@@ -124,7 +124,7 @@ class GameAPIDesign(remote.Service):
                       name='make_move',
                       http_method='PUT')
     def make_move(self, request):
-        """Makes a move. Returns a game state with message"""  
+        """Makes a move. Returns a game state with message"""
         game = get_by_urlsafe(request.urlsafe_game_key, Game)
         if game:
             dealer = game.dealer.get()
@@ -137,7 +137,8 @@ class GameAPIDesign(remote.Service):
 
             # Check to see if valid guess
             if request.pick_a_date > 31 or request.pick_a_date < 1:
-                game.add_game_history('Invalid guess! No such date!', game.attempts_allowed - game.attempts_remaining, request.pick_a_date)
+                game.add_game_history('Invalid guess! No such date!', game.attempts_allowed - game.attempts_remaining,
+                                      request.pick_a_date)
                 return game.to_form('Invalid guess! No such date!')
 
 
@@ -148,6 +149,10 @@ class GameAPIDesign(remote.Service):
                     if game.attempts_remaining > int(game.attempts_allowed / 2):
                         gambler.total_points += 2
                         dealer.total_points -= 2
+                    # Hit the jackpot
+                    if game.attempts_allowed < 3:
+                        gambler.total_points += 10
+                        dealer.total_points -= 10
                     gambler.total_points += 1
                     dealer.total_points -= 1
                     dealer.put()
@@ -162,10 +167,12 @@ class GameAPIDesign(remote.Service):
                 # If guess is incorrect, warn gambler and try again
                 if request.pick_a_date < game.target:
                     msg = 'Maybe too early for a bonus!'
-                    game.add_game_history('You guessed higher.', game.attempts_allowed - game.attempts_remaining, request.pick_a_date)
+                    game.add_game_history('You guessed higher.', game.attempts_allowed - game.attempts_remaining,
+                                          request.pick_a_date)
                 else:
                     msg = 'A little too late, a bonus comes sooner than that!'
-                    game.add_game_history('You guessed lower.', game.attempts_allowed - game.attempts_remaining, request.pick_a_date)
+                    game.add_game_history('You guessed lower.', game.attempts_allowed - game.attempts_remaining,
+                                          request.pick_a_date)
 
                 # Gambler guesses incorrectly and exceeded limited attempts, so game over.
                 if game.attempts_remaining < 1:
@@ -174,7 +181,8 @@ class GameAPIDesign(remote.Service):
                     dealer.put()
                     gambler.put()
                     game.won = False
-                    game.add_game_history('Incorrect. Game over!', game.attempts_allowed - game.attempts_remaining, request.pick_a_date)
+                    game.add_game_history('Incorrect. Game over!', game.attempts_allowed - game.attempts_remaining,
+                                          request.pick_a_date)
                     game.end_game(game.won, dealer.key, gambler.key)
                     game.put()
                     return game.to_form(msg + ' Game over!')

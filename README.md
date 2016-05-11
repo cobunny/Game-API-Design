@@ -13,10 +13,19 @@ This is a two-player number guessing game. Player picks a date, ranging from 1st
 (Assume 31 days in a month).  'pick_a_dates' are sent to the `make_move` endpoint which will reply
 with either: 'too early', 'too late', 'you win', or 'game over' (if the maximum
 number of attempts is reached).
-Different games can be played by many different users at any
-given time.  A user can create & play different games at the same time.  However when replaying an existing game, 
-the previous session of that game with all its records will be deleted from the database.  Each game can be retrieved 
-or played by using the path parameter `urlsafe_game_key`.
+Different games can be played by many different users at any given time.  A user can create & play different games 
+at the same time.  However when replaying an existing game, the previous session of that game with all its records 
+might be overwritten by the new game's record if their keys are happened to be exactly the same.  Each game can be 
+retrieved or played by using the path parameter `urlsafe_game_key`.
+
+## Game Rules and Score-keeping:
+A dealer can choose how many attempts are allowed for each game. The two players can not be the same user in a game.
+If a gambler picked the right date within the number of allowed attempts, the gambler wins.  Otherwise, the dealer wins.
+The winner of the game will get 1 point added to his/her total points, the loser will have 1 point deducted from his/her
+total points. But if a gambler won and his/her remaining guesses are greater than the half of allowed attempts, the 
+gambler gets double points (which are 2 points) added to his/her total points and the dealer loses 2 points.  Also, if 
+gambler won and the allowed attempts are less than 3, then gambler gets a Jackpot of 10 points added, dealer loses 10 
+points.
 
 ##Files Included:
  - api.py: Contains endpoints and game playing logic.

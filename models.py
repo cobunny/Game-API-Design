@@ -81,7 +81,7 @@ class Game(ndb.Model):
 
     def add_game_history(self, result, guesses, pick_a_date):
         if isinstance(result, str):
-            self.history.append({'message': result, 'nth_guess': guesses, 'your guess':pick_a_date})
+            self.history.append({'message': result, 'nth_guess': guesses, 'your guess': pick_a_date})
             self.history = self.history
             self.put()
         else:
