@@ -70,6 +70,10 @@ class GameAPIDesign(remote.Service):
         if request.attempts < 1 or request.attempts > 30:
             raise endpoints.BadRequestException('Number of attempts must be less than 30 and greater than 1')
 
+        # Maker sure dealer and gambler are not the same user
+        if request.dealer_name == request.gambler_name:
+            raise endpoints.BadRequestException('Players must be different users!')
+
         # Check to see if game already exist.
         games = Game.query(ndb.AND(Game.gambler == gambler.key, Game.dealer == dealer.key)).fetch()
 
