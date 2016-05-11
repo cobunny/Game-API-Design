@@ -79,9 +79,9 @@ class Game(ndb.Model):
         self.game_canceled = True
         self.put()
 
-    def add_game_history(self, result, guesses):
-        if isinstance(result, str) and isinstance(guesses, int):
-            self.history.append({'message': result, 'nth_guess': guesses})
+    def add_game_history(self, result, guesses, pick_a_date):
+        if isinstance(result, str):
+            self.history.append({'message': result, 'nth_guess': guesses, 'your guess':pick_a_date})
             self.history = self.history
             self.put()
         else:

@@ -6,6 +6,7 @@ primarily with communication to/from the API's users."""
 
 import logging
 import endpoints
+import re
 from protorpc import remote, messages
 from google.appengine.api import memcache
 from google.appengine.api import taskqueue
@@ -83,7 +84,7 @@ class GameAPIDesign(remote.Service):
         # This operation is not needed to complete the creation of a new game
         # so it is performed out of sequence.
         taskqueue.add(url='/tasks/cache_average_attempts')
-        return game.to_form('Good luck playing Get Your Bonus Day!')
+        return game.to_form('Good luck playing games!')
 
     # - - - - Get game endpoint - - - - - - - - - - - - - - -
     @endpoints.method(request_message=GET_GAME_REQUEST,
@@ -123,8 +124,7 @@ class GameAPIDesign(remote.Service):
                       name='make_move',
                       http_method='PUT')
     def make_move(self, request):
-        """Makes a move. Returns a game state with message"""
-
+        """Makes a move. Returns a game state with message"""  
         game = get_by_urlsafe(request.urlsafe_game_key, Game)
         if game:
             dealer = game.dealer.get()
@@ -132,12 +132,12 @@ class GameAPIDesign(remote.Service):
 
             # Check to see if game is already finished
             if game.game_over:
-                game.add_game_history('Game already over!', game.attempts_allowed - game.attempts_remaining)
+                game.add_game_history('Game already over!', None, None)
                 return game.to_form('Game already over!')
 
             # Check to see if valid guess
             if request.pick_a_date > 31 or request.pick_a_date < 1:
-                game.add_game_history('Invalid guess! No such date!', game.attempts_allowed - game.attempts_remaining)
+                game.add_game_history('Invalid guess! No such date!', game.attempts_allowed - game.attempts_remaining, request.pick_a_date)
                 return game.to_form('Invalid guess! No such date!')
 
 
@@ -154,7 +154,7 @@ class GameAPIDesign(remote.Service):
                     gambler.put()
                     game.won = True
                     game.add_game_history('Congratulations! You picked the correct date.',
-                                          game.attempts_allowed - game.attempts_remaining)
+                                          game.attempts_allowed - game.attempts_remaining, request.pick_a_date)
                     game.end_game(game.won, dealer.key, gambler.key)
                     game.put()
                     return game.to_form('You win!')
@@ -162,10 +162,10 @@ class GameAPIDesign(remote.Service):
                 # If guess is incorrect, warn gambler and try again
                 if request.pick_a_date < game.target:
                     msg = 'Maybe too early for a bonus!'
-                    game.add_game_history('You guessed higher.', game.attempts_allowed - game.attempts_remaining)
+                    game.add_game_history('You guessed higher.', game.attempts_allowed - game.attempts_remaining, request.pick_a_date)
                 else:
                     msg = 'A little too late, a bonus comes sooner than that!'
-                    game.add_game_history('You guessed lower.', game.attempts_allowed - game.attempts_remaining)
+                    game.add_game_history('You guessed lower.', game.attempts_allowed - game.attempts_remaining, request.pick_a_date)
 
                 # Gambler guesses incorrectly and exceeded limited attempts, so game over.
                 if game.attempts_remaining < 1:
@@ -174,7 +174,7 @@ class GameAPIDesign(remote.Service):
                     dealer.put()
                     gambler.put()
                     game.won = False
-                    game.add_game_history('Incorrect. Game over!', game.attempts_allowed - game.attempts_remaining)
+                    game.add_game_history('Incorrect. Game over!', game.attempts_allowed - game.attempts_remaining, request.pick_a_date)
                     game.end_game(game.won, dealer.key, gambler.key)
                     game.put()
                     return game.to_form(msg + ' Game over!')
